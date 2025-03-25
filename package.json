@@ -1,0 +1,20 @@
+{
+  "name": "remove-watermark",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "mkdir frames blurred && node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "child_process": "^1.0.2",
+    "ffmpeg": "^0.0.4",
+    "fluent-ffmpeg": "^2.1.3",
+    "fs-extra": "^11.3.0",
+    "jimp": "^1.6.0",
+    "sharp": "^0.33.5"
+  }
+}
