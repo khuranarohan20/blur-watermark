@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "mkdir frames blurred && node index.js"
+    "start": "rm -rf blurred/ && rm -rf frames/ && mkdir frames blurred && node index.js"
   },
   "keywords": [],
   "author": "",

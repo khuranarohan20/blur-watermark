@@ -2,6 +2,9 @@ const ffmpeg = require("fluent-ffmpeg");
 const fs = require("fs-extra");
 const sharp = require("sharp");
 const path = require("path");
+const { exec } = require("child_process");
+const util = require("util");
+const execPromise = util.promisify(exec);
 
 const extractFrames = (inputVideo, outputDir) => {
   fs.ensureDirSync(outputDir);
@@ -9,7 +12,7 @@ const extractFrames = (inputVideo, outputDir) => {
   return new Promise((resolve, reject) => {
     ffmpeg(inputVideo)
       .output(`${outputDir}/frame_%04d.png`)
-      .outputOptions("-q:v 2")
+      .outputOptions(["-vf", "fps=25", "-q:v 2"]) // 🔥 Ensures all frames extracted
       .on("end", () => {
         console.log("✅ Frames extracted successfully");
         resolve();
@@ -19,21 +22,19 @@ const extractFrames = (inputVideo, outputDir) => {
   });
 };
 
-const reconstructVideo = (frameDir, inputVideo, outputVideo) => {
+function reconstructVideo(frameDir, outputVideo) {
   return new Promise((resolve, reject) => {
     ffmpeg()
-      .input(`${frameDir}/frame_%04d.png`)
-      .input(inputVideo)
-      .inputFPS(25)
+      .input(`${frameDir}/frame_%04d.png`) // Match sequential frames
+      .inputFPS(25) // Adjust FPS based on original video
 
       .videoCodec("libx264")
-      .outputOptions("-crf", "18", "-preset", "slow")
+      .outputOptions("-crf 18", "-preset slow")
+      .pixFmt("yuv420p")
 
-      .noAudio()
       .save(outputVideo)
-
       .on("end", () => {
-        console.log("✅ Video reconstructed successfully");
+        console.log("✅ Video reconstructed successfully:", outputVideo);
         resolve();
       })
       .on("error", (err, stdout, stderr) => {
@@ -43,7 +44,7 @@ const reconstructVideo = (frameDir, inputVideo, outputVideo) => {
         reject(err);
       });
   });
-};
+}
 
 const mergeAudio = (videoWithoutAudio, originalVideo, finalOutput) => {
   return new Promise((resolve, reject) => {
@@ -61,18 +62,20 @@ const mergeAudio = (videoWithoutAudio, originalVideo, finalOutput) => {
   });
 };
 
-async function getWatermarkWidth(imagePath) {
+async function getWatermarkDetails(imagePath) {
   try {
     const { width, height } = await sharp(imagePath).metadata();
 
-    const watermarkHeight = Math.round(height * 0.05);
+    // Define approximate region where watermark might be
+    const watermarkHeight = Math.round(height * 0.05); // 5% of image height
     const watermarkRegion = {
-      left: Math.round(width * 0.6),
-      top: Math.round(height * 0.9),
-      width: Math.round(width * 0.4),
+      left: Math.round(width * 0.6), // Start searching from 60% of image width
+      top: Math.round(height * 0.9), // Start from 90% of image height
+      width: Math.round(width * 0.4), // Search in last 40% of width
       height: watermarkHeight,
     };
 
+    // Extract the possible watermark region
     const watermarkImage = await sharp(imagePath)
       .extract(watermarkRegion)
       .toBuffer();
@@ -82,72 +85,72 @@ async function getWatermarkWidth(imagePath) {
       .raw()
       .toBuffer({ resolveWithObject: true });
 
-    let minX = watermarkRegion.width,
-      maxX = 0;
+    let minX = watermarkRegion.width, // Start with max width
+      maxX = 0,
+      minY = watermarkRegion.height, // Start with max height
+      maxY = 0;
 
-    for (let x = 0; x < watermarkRegion.width; x++) {
-      for (let y = 0; y < watermarkHeight; y++) {
+    // Scan pixels to detect the darkest areas (potential watermark)
+    for (let y = 0; y < watermarkRegion.height; y++) {
+      for (let x = 0; x < watermarkRegion.width; x++) {
         const index = y * watermarkRegion.width + x;
         if (data[index] < 200) {
+          // Threshold for watermark detection
           minX = Math.min(minX, x);
           maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
         }
       }
     }
 
-    const watermarkWidth = maxX - minX;
+    // Calculate watermark dimensions and position
+    if (maxX > minX && maxY > minY) {
+      return {
+        width: maxX - minX,
+        height: maxY - minY,
+        left: watermarkRegion.left + minX,
+        top: watermarkRegion.top + minY,
+      };
+    }
 
-    return watermarkWidth;
+    return null; // No watermark detected
   } catch (error) {
-    console.error("Error detecting watermark width:", error);
+    console.error("Error detecting watermark:", error);
+    return null;
   }
 }
 
-const blurWatermark = async (inputImage, outputImage) => {
-  try {
-    if (!fs.existsSync(inputImage)) {
-      console.error("❌ Error: File does not exist:", inputImage);
-      return;
-    }
+async function removeWatermark(inputPath, outputPath) {
+  const details = await getWatermarkDetails(inputPath);
 
-    const { width, height } = await sharp(inputImage).metadata();
-
-    console.log(`ℹ️ Image dimensions: ${width}x${height}`);
-
-    const watermarkWidth = await getWatermarkWidth(inputImage);
-    const watermarkHeight = 50;
-    const watermarkX = width - watermarkWidth - 10;
-    const watermarkY = height - watermarkHeight - 10;
-
-    if (watermarkX < 0 || watermarkY < 0) {
-      console.error("❌ Error: Watermark position is out of bounds.");
-      return;
-    }
-
-    await sharp(inputImage)
-      .extract({
-        left: watermarkX,
-        top: watermarkY,
-        width: watermarkWidth,
-        height: watermarkHeight,
-      })
-      .blur(10)
-      .toBuffer()
-      .then((blurredWatermark) =>
-        sharp(inputImage)
-          .composite([
-            { input: blurredWatermark, left: watermarkX, top: watermarkY },
-          ])
-          .toFile(outputImage)
-      );
-
-    console.log("✅ Watermark blurred successfully! Saved to:", outputImage);
-  } catch (error) {
-    console.error("❌ Error processing image:", error);
+  if (
+    !details ||
+    !details.width ||
+    !details.height ||
+    !details.left ||
+    !details.top
+  ) {
+    console.log(`No watermark detected in ${inputPath}`);
+    return;
   }
-};
 
-function loopOverFolder(folderPath) {
+  const { width, height, left, top } = details;
+  const command = `python remove_watermark.py ${inputPath} ${outputPath} ${width} ${height} ${left} ${top}`;
+
+  try {
+    const { stdout, stderr } = await execPromise(command);
+    console.log(`✅ Watermark removed: ${outputPath}`);
+    if (stderr) console.error(`⚠️ Python Warning: ${stderr}`);
+  } catch (error) {
+    console.error(
+      `❌ Error removing watermark from ${inputPath}:`,
+      error.message
+    );
+  }
+}
+
+async function loopOverFolder(folderPath) {
   return new Promise((resolve, reject) => {
     fs.readdir(folderPath, { withFileTypes: true }, (err, files) => {
       if (err) {
@@ -162,7 +165,7 @@ function loopOverFolder(folderPath) {
           await loopOverFolder(fullPath);
         } else {
           console.log("Processing file:", fullPath);
-          await blurWatermark(fullPath, `blurred/${file.name}`);
+          await removeWatermark(fullPath, `blurred/${file.name}`);
         }
       });
 
@@ -179,9 +182,9 @@ function loopOverFolder(folderPath) {
     await extractFrames("1080p.mp4", "frames");
     console.log("Now remove the watermark manually or using AI...");
     await loopOverFolder("./frames");
-    console.log("All watermarks blurred! Now contructing the video...");
+    console.log("✅ All watermarks removed! Now contructing the video...");
 
-    await reconstructVideo("./blurred", "1080p.mp4", "temp_video.mp4");
+    await reconstructVideo("./blurred", "temp_video.mp4");
     await mergeAudio("temp_video.mp4", "1080p.mp4", "final_output.mp4");
 
     console.log("🎉 Processing complete! Your final video is ready.");
