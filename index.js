@@ -153,29 +153,35 @@ async function removeWatermark(inputPath, outputPath) {
 }
 
 async function loopOverFolder(folderPath) {
-  return new Promise((resolve, reject) => {
-    fs.readdir(folderPath, { withFileTypes: true }, (err, files) => {
-      if (err) {
-        console.error("Error reading folder:", err);
-        return reject(err);
-      }
+  try {
+    const files = await fs.readdir(folderPath, { withFileTypes: true });
+    let frameIndex = 1; // Start frame numbering from 1
 
-      const processFilePromises = files.map(async (file) => {
-        const fullPath = path.join(folderPath, file.name);
+    for (const file of files) {
+      const fullPath = path.join(folderPath, file.name);
 
-        if (file.isDirectory()) {
-          await loopOverFolder(fullPath);
-        } else {
-          console.log("Processing file:", fullPath);
-          await removeWatermark(fullPath, `blurred/${file.name}`);
+      if (file.isDirectory()) {
+        await loopOverFolder(fullPath);
+      } else {
+        const outputPath = `blurred/frame_${String(frameIndex).padStart(
+          4,
+          "0"
+        )}.png`;
+
+        try {
+          console.log(`Processing file: ${fullPath} -> ${outputPath}`);
+          await removeWatermark(fullPath, outputPath);
+          frameIndex++; // Increment only if successful
+        } catch (error) {
+          console.error(`❌ Failed to process ${fullPath}, skipping...`);
         }
-      });
+      }
+    }
 
-      Promise.all(processFilePromises)
-        .then(() => resolve())
-        .catch(reject);
-    });
-  });
+    console.log("✅ All frames processed!");
+  } catch (err) {
+    console.error("❌ Error reading folder:", err);
+  }
 }
 
 (async () => {
