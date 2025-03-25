@@ -25,13 +25,15 @@ const extractFrames = (inputVideo, outputDir) => {
 function reconstructVideo(frameDir, outputVideo) {
   return new Promise((resolve, reject) => {
     ffmpeg()
-      .input(`${frameDir}/frame_%04d.png`) // Match sequential frames
-      .inputFPS(25) // Adjust FPS based on original video
-
+      .input(`${frameDir}/frame_%04d.png`)
+      .inputFPS(25) // Make sure FFmpeg reads at 25 FPS
       .videoCodec("libx264")
-      .outputOptions("-crf 18", "-preset slow")
-      .pixFmt("yuv420p")
-
+      .outputOptions([
+        "-crf 18",
+        "-preset slow",
+        "-pix_fmt yuv420p",
+        "-r 25", // Ensure correct FPS
+      ])
       .save(outputVideo)
       .on("end", () => {
         console.log("✅ Video reconstructed successfully:", outputVideo);
