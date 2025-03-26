@@ -1,9 +1,15 @@
 import cv2
 import numpy as np
 import sys
+import os
 
 def remove_watermark(input_path, output_path, width, height, left, top):
     img = cv2.imread(input_path)
+    
+     # Ensure the output folder exists
+    output_dir = os.path.dirname(output_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     
     height, width, _ = img.shape 
     

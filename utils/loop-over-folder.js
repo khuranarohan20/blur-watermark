@@ -1,8 +1,8 @@
 import fs from "fs-extra";
 import path from "path";
-import { removeWatermark } from "./remove-watermark";
+import { removeWatermark } from "./remove-watermark.js";
 
-export async function loopOverFolder(folderPath) {
+export async function loopOverFolder(folderPath, blurFolderPath) {
   try {
     const files = await fs.readdir(folderPath, { withFileTypes: true });
     let frameIndex = 1;
@@ -13,10 +13,9 @@ export async function loopOverFolder(folderPath) {
       if (file.isDirectory()) {
         await loopOverFolder(fullPath);
       } else {
-        const outputPath = `blurred/frame_${String(frameIndex).padStart(
-          4,
-          "0"
-        )}.png`;
+        const outputPath = `${blurFolderPath}/frame_${String(
+          frameIndex
+        ).padStart(4, "0")}.png`;
 
         try {
           console.log(`Processing file: ${fullPath} -> ${outputPath}`);

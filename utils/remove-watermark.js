@@ -1,6 +1,6 @@
 import { exec } from "child_process";
 import util from "util";
-import { getWatermarkDetails } from "./utils/get-watermark-details";
+import { getWatermarkDetails } from "./get-watermark-details.js";
 
 const execPromise = util.promisify(exec);
 

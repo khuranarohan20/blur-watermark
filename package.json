@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "rm -rf blurred/ && rm -rf frames/ && mkdir frames blurred && node index.js"
+    "start": "rm -rf blurred/ && rm -rf frames/ && mkdir frames blurred && nodemon index.js"
   },
   "type": "module",
   "keywords": [],
@@ -12,9 +12,13 @@
   "description": "",
   "dependencies": {
     "child_process": "^1.0.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
     "ffmpeg": "^0.0.4",
     "fluent-ffmpeg": "^2.1.3",
     "fs-extra": "^11.3.0",
+    "mime-types": "^2.1.35",
+    "mongoose": "^8.13.0",
     "sharp": "^0.33.5"
   }
 }
