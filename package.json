@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "rm -rf blurred/ && rm -rf frames/ && mkdir frames blurred && nodemon index.js"
+    "start": "nodemon index.js"
   },
   "type": "module",
   "keywords": [],
