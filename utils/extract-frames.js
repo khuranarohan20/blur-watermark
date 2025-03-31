@@ -1,6 +1,9 @@
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs-extra";
 
+// Set ffmpeg path explicitly
+ffmpeg.setFfmpegPath("ffmpeg");
+
 export const extractFrames = (inputVideo, outputDir) => {
   fs.ensureDirSync(outputDir);
 

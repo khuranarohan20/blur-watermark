@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon index.js"
+    "start": "nodemon index.js",
+    "backend": "mkdir -p cache && docker run -p 8080:8080 -v '$(pwd)/cache:/root/.cache/' --rm cwq1913/lama-cleaner:cpu-1.2.5 lama-cleaner --device=cpu --port=8080 --host=0.0.0.0"
   },
   "type": "module",
   "keywords": [],
