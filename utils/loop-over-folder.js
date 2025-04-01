@@ -1,34 +1,18 @@
 import fs from "fs-extra";
-import path from "path";
 import { removeWatermark } from "./remove-watermark.js";
 
 export async function loopOverFolder(folderPath, blurFolderPath) {
   try {
-    const files = await fs.readdir(folderPath, { withFileTypes: true });
-    let frameIndex = 1;
+    // Ensure both directories exist
+    await fs.ensureDir(folderPath);
+    await fs.ensureDir(blurFolderPath);
 
-    for (const file of files) {
-      const fullPath = path.join(folderPath, file.name);
-
-      if (file.isDirectory()) {
-        await loopOverFolder(fullPath);
-      } else {
-        const outputPath = `${blurFolderPath}/frame_${String(
-          frameIndex
-        ).padStart(4, "0")}.png`;
-
-        try {
-          console.log(`Processing file: ${fullPath} -> ${outputPath}`);
-          await removeWatermark(fullPath, outputPath);
-          frameIndex++;
-        } catch (error) {
-          console.error(`❌ Failed to process ${fullPath}, skipping...`);
-        }
-      }
-    }
+    // Process the entire folder at once
+    console.log(`Processing folder: ${folderPath} -> ${blurFolderPath}`);
+    await removeWatermark(folderPath, blurFolderPath);
 
     console.log("✅ All frames processed!");
   } catch (err) {
-    console.error("❌ Error reading folder:", err);
+    console.error("❌ Error processing folder:", err);
   }
 }

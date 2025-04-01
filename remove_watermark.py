@@ -1,8 +1,8 @@
-import requests
 import sys
 import os
 from PIL import Image
-import io
+import cv2
+import numpy as np
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import glob
@@ -23,15 +23,15 @@ def analyze_first_frame(input_path):
         start_y = img_height - watermark_height
         
         return {
-            'img_width': img_width,
-            'img_height': img_height,
-            'watermark_height': watermark_height,
-            'watermark_width': watermark_width,
-            'start_x': start_x,
-            'start_y': start_y
+            'img_width': int(img_width),
+            'img_height': int(img_height),
+            'watermark_height': int(watermark_height),
+            'watermark_width': int(watermark_width),
+            'start_x': int(start_x),
+            'start_y': int(start_y)
         }
 
-def remove_watermark(input_path, output_path, watermark_info, max_retries=3):
+def remove_watermark(input_path, output_path, watermark_info):
     print(f"Processing image: {input_path}")
     print(f"Output path: {output_path}")
     
@@ -46,113 +46,44 @@ def remove_watermark(input_path, output_path, watermark_info, max_retries=3):
         print(f"Creating output directory: {output_dir}")
         os.makedirs(output_dir, exist_ok=True)
     
-    for attempt in range(max_retries):
-        try:
-            # Read the image
-            print("Reading input image...")
-            with Image.open(input_path) as img:
-                img_width, img_height = img.size
-                if img_width != watermark_info['img_width'] or img_height != watermark_info['img_height']:
-                    print(f"Warning: Image dimensions don't match first frame. Expected {watermark_info['img_width']}x{watermark_info['img_height']}, got {img_width}x{img_height}")
-            
-            # Prepare the mask with the same dimensions as the image
-            print("Creating mask...")
-            mask = Image.new('L', (img_width, img_height), 0)
-            
-            # Create a mask for the watermark region using pre-calculated values
-            for y in range(watermark_info['start_y'], img_height):
-                for x in range(watermark_info['start_x'], img_width):
-                    mask.putpixel((x, y), 255)
-            
-            # Save mask to temporary file
-            mask_path = f"temp_mask_{os.getpid()}.png"  # Use process ID to avoid conflicts
-            mask.save(mask_path, format="PNG")
-            
-            # Prepare form data
-            form_data = {
-                'ldmSteps': '25',
-                'ldmSampler': 'plms',
-                'zitsWireframe': 'true',
-                'hdStrategy': 'Crop',
-                'hdStrategyCropMargin': '196',
-                'hdStrategyCropTrigerSize': '800',
-                'hdStrategyResizeLimit': '2048',
-                'prompt': '',
-                'negativePrompt': '',
-                'croperX': '180',
-                'croperY': '443',
-                'croperHeight': '512',
-                'croperWidth': '512',
-                'useCroper': 'false',
-                'sdMaskBlur': '5',
-                'sdStrength': '0.75',
-                'sdSteps': '50',
-                'sdGuidanceScale': '7.5',
-                'sdSampler': 'uni_pc',
-                'sdSeed': '-1',
-                'sdMatchHistograms': 'false',
-                'sdScale': '1',
-                'cv2Radius': '5',
-                'cv2Flag': 'INPAINT_NS',
-                'paintByExampleSteps': '50',
-                'paintByExampleGuidanceScale': '7.5',
-                'paintByExampleSeed': '-1',
-                'paintByExampleMaskBlur': '5',
-                'paintByExampleMatchHistograms': 'false',
-                'p2pSteps': '50',
-                'p2pImageGuidanceScale': '1.5',
-                'p2pGuidanceScale': '7.5',
-                'controlnet_conditioning_scale': '0.4',
-                'controlnet_method': 'control_v11p_sd15_canny'
-            }
-            
-            # Prepare files
-            with open(input_path, 'rb') as img1, open(mask_path, 'rb') as img2:
-                files = {
-                    'image': ('image.png', img1, 'image/png'),
-                    'mask': ('blob', img2, 'image/png')
-                }
-                
-                # Send request to lama-cleaner
-                print(f"Sending request to lama-cleaner... (Attempt {attempt + 1}/{max_retries})")
-                response = requests.post('http://127.0.0.1:8080/inpaint', 
-                                      data=form_data,
-                                      files=files,
-                                      timeout=60)  # Increased timeout
-            
-            # Clean up temporary mask file
-            os.remove(mask_path)
-            
-            if response.status_code == 200:
-                # Save the result
-                print(f"Saving result to: {output_path}")
-                with open(output_path, 'wb') as f:
-                    f.write(response.content)
-                print("Successfully saved the processed image!")
-                return True
-            else:
-                print(f"Error: Server returned status code {response.status_code}")
-                print("Response content:", response.text)
-                
-        except requests.exceptions.Timeout:
-            print(f"Error: Request timed out. Attempt {attempt + 1}/{max_retries}")
-            if attempt < max_retries - 1:
-                print("Waiting 5 seconds before retrying...")
-                time.sleep(5)
-            continue
-        except requests.exceptions.ConnectionError:
-            print(f"Error: Could not connect to the server. Attempt {attempt + 1}/{max_retries}")
-            if attempt < max_retries - 1:
-                print("Waiting 5 seconds before retrying...")
-                time.sleep(5)
-            continue
-        except Exception as e:
-            print(f"An error occurred: {str(e)}")
-            import traceback
-            traceback.print_exc()
+    try:
+        # Read the image using OpenCV
+        print("Reading input image...")
+        img = cv2.imread(input_path)
+        if img is None:
+            print(f"Error: Could not read image: {input_path}")
             return False
-    
-    return False
+            
+        # Convert image to RGB (OpenCV uses BGR)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        # Create mask
+        print("Creating mask...")
+        mask = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
+        
+        # Fill the watermark area in the mask
+        mask[watermark_info['start_y']:watermark_info['img_height'], 
+             watermark_info['start_x']:watermark_info['img_width']] = 255
+        
+        # Apply inpainting
+        print("Applying inpainting...")
+        # Using INPAINT_TELEA algorithm with a larger radius for better results
+        result = cv2.inpaint(img, mask, inpaintRadius=10, flags=cv2.INPAINT_TELEA)
+        
+        # Convert back to BGR for saving
+        result = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
+        
+        # Save the result
+        print(f"Saving result to: {output_path}")
+        cv2.imwrite(output_path, result)
+        print("Successfully saved the processed image!")
+        return True
+        
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def get_frame_number(filename):
     """Extract frame number from filename"""
@@ -162,14 +93,8 @@ def get_frame_number(filename):
     return 0
 
 def process_frame(args):
-    input_path, frame_number, watermark_info, output_dir = args
-    output_filename = f"frame_{frame_number:04d}.png"
-    output_path = os.path.join(output_dir, output_filename)
-    
-    success = remove_watermark(input_path, output_path, watermark_info)
-    if success:
-        return frame_number, True
-    return frame_number, False
+    input_path, output_path, watermark_info = args
+    return remove_watermark(input_path, output_path, watermark_info)
 
 def process_directory(input_dir, output_dir):
     # Get all image files in the input directory
@@ -192,30 +117,59 @@ def process_directory(input_dir, output_dir):
     # Prepare arguments for parallel processing
     process_args = []
     for i, input_path in enumerate(image_files, 1):
-        process_args.append((input_path, i, watermark_info, output_dir))
+        output_filename = f"frame_{i:04d}.png"
+        output_path = os.path.join(output_dir, output_filename)
+        process_args.append((input_path, output_path, watermark_info))
     
     # Process images in parallel
     with ProcessPoolExecutor(max_workers=num_cores) as executor:
         # Submit all tasks
-        future_to_frame = {executor.submit(process_frame, args): args[1] for args in process_args}
+        futures = [executor.submit(process_frame, args) for args in process_args]
         
         # Process completed tasks
-        for future in as_completed(future_to_frame):
-            frame_number, success = future.result()
-            if success:
-                print(f"Successfully processed frame {frame_number}")
-            else:
-                print(f"Failed to process frame {frame_number}")
+        for i, future in enumerate(as_completed(futures), 1):
+            try:
+                success = future.result()
+                if success:
+                    print(f"Successfully processed frame {i}")
+                else:
+                    print(f"Failed to process frame {i}")
+            except Exception as e:
+                print(f"Error processing frame {i}: {str(e)}")
             
-            # Add a small delay between frames to prevent overwhelming the server
-            time.sleep(1)
+            # Add a small delay between frames to prevent overwhelming the system
+            time.sleep(0.1)  # Small delay between frames
+
+def process_single_file(input_path, output_path, width, height, left, top):
+    """Process a single file with specified watermark dimensions"""
+    watermark_info = {
+        'img_width': int(width),
+        'img_height': int(height),
+        'watermark_height': int(height),
+        'watermark_width': int(width),
+        'start_x': int(left),
+        'start_y': int(top)
+    }
+    
+    return remove_watermark(input_path, output_path, watermark_info)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python remove_watermark.py <input_directory> <output_directory>")
+    if len(sys.argv) == 3:
+        # Directory mode
+        input_dir = sys.argv[1]
+        output_dir = sys.argv[2]
+        process_directory(input_dir, output_dir)
+    elif len(sys.argv) == 7:
+        # Single file mode
+        input_path = sys.argv[1]
+        output_path = sys.argv[2]
+        width = sys.argv[3]
+        height = sys.argv[4]
+        left = sys.argv[5]
+        top = sys.argv[6]
+        process_single_file(input_path, output_path, width, height, left, top)
+    else:
+        print("Usage:")
+        print("  Directory mode: python remove_watermark.py <input_directory> <output_directory>")
+        print("  Single file mode: python remove_watermark.py <input_file> <output_file> <width> <height> <left> <top>")
         sys.exit(1)
-    
-    input_dir = sys.argv[1]
-    output_dir = sys.argv[2]
-    
-    process_directory(input_dir, output_dir)
